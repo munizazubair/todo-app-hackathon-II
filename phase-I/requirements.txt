@@ -1,0 +1,8 @@
+# Phase I - In-Memory Python Console Todo Application
+# No external dependencies required - uses Python standard library only
+
+# Optional: for colored terminal output (not required for core functionality)
+# colorama==0.4.6
+
+# Python version requirement
+# python>=3.8
