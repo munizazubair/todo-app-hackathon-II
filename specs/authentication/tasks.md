@@ -1,10 +1,25 @@
-# Authentication Implementation Tasks
+# Authentication & Task Management Implementation Tasks
 
-## Phase 2 Todo Application - Sign Up & Sign In
+## Phase II Todo Application - Better Auth + Task Management
 
-**Created:** 2026-01-16
-**Status:** PENDING
-**Based On:** specs/authentication/plan.md
+**Created:** 2026-01-17
+**Status:** READY FOR IMPLEMENTATION
+**Based On:** specs/authentication/plan.md (Better Auth approach)
+**Supersedes:** Previous JWT-based FastAPI task list (188 tasks)
+
+---
+
+## Overview
+
+This task list implements authentication using **Better Auth** (TypeScript-native) running in Next.js, with FastAPI as a trusted data service. This is a complete redesign from the previous JWT-in-FastAPI approach.
+
+### Architecture Summary
+
+```
+Browser → Better Auth Client → Next.js API Routes → Better Auth → Neon PostgreSQL
+                                     ↓
+                              Todo API Proxy → FastAPI (trusts X-User-ID header)
+```
 
 ---
 
@@ -15,532 +30,724 @@
 - `[x]` - Completed
 - `[!]` - Blocked
 
-**Priority:** P1 (Critical) | P2 (High) | P3 (Medium) | P4 (Low)
+**Priority:** P1 (Critical) | P2 (High) | P3 (Medium)
 
 ---
 
-## CATEGORY 1: DATABASE TASKS
+## PHASE 1: BETTER AUTH SETUP (Frontend)
 
-### 1.1 Schema Creation
+### 1.1 Install Dependencies
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T001 | Create Alembic migration for `users` table with columns: id (UUID), email (VARCHAR 255), hashed_password (VARCHAR 255), created_at (TIMESTAMP), updated_at (TIMESTAMP) | Backend/DB | P1 | [ ] |
-| T002 | Add UNIQUE constraint on `users.email` column | Backend/DB | P1 | [ ] |
-| T003 | Add INDEX on `users.email` for login lookup performance | Backend/DB | P2 | [ ] |
-| T004 | Enable UUID extension in PostgreSQL if not already enabled | Backend/DB | P1 | [ ] |
-| T005 | Run migration to create users table in Neon database | Backend/DB | P1 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T001 | Install `better-auth` package: `npm install better-auth` | P1 | [ ] |
+| T002 | Install `@neondatabase/serverless` for Neon PostgreSQL connection: `npm install @neondatabase/serverless` | P1 | [ ] |
 
-### 1.2 Todos Table Modification
+### 1.2 Environment Variables
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T006 | Create Alembic migration to add `user_id` (UUID) column to `todos` table as NULLABLE | Backend/DB | P1 | [ ] |
-| T007 | Add FOREIGN KEY constraint: `todos.user_id` → `users.id` with ON DELETE CASCADE | Backend/DB | P1 | [ ] |
-| T008 | Add INDEX on `todos.user_id` for user filtering | Backend/DB | P2 | [ ] |
-| T009 | Add composite INDEX on `todos(user_id, status)` for filtered queries | Backend/DB | P3 | [ ] |
-| T010 | Create migration to handle existing todos (assign to system user or make user_id required) | Backend/DB | P1 | [ ] |
-| T011 | Create migration to make `todos.user_id` NOT NULL after data migration | Backend/DB | P1 | [ ] |
-| T012 | Run all migrations to update todos table in Neon database | Backend/DB | P1 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T003 | Generate secret key: `npx @better-auth/cli@latest secret` | P1 | [ ] |
+| T004 | Add `BETTER_AUTH_SECRET` to `.env.local` | P1 | [ ] |
+| T005 | Add `BETTER_AUTH_URL=http://localhost:3000` to `.env.local` | P1 | [ ] |
+| T006 | Add `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000` to `.env.local` | P1 | [ ] |
+| T007 | Add `DATABASE_URL` (Neon connection string) to `.env.local` | P1 | [ ] |
+| T008 | Add `BACKEND_URL=http://localhost:8889` to `.env.local` | P1 | [ ] |
 
----
+### 1.3 Auth Server Configuration
 
-## CATEGORY 2: BACKEND CONFIGURATION
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T009 | Create `lib/auth.ts` with Better Auth server config | P1 | [ ] |
+| T010 | Configure Neon PostgreSQL Pool connection in auth.ts | P1 | [ ] |
+| T011 | Enable `emailAndPassword` authentication with `autoSignIn: true` | P1 | [ ] |
+| T012 | Configure session settings (7-day expiry, daily refresh) | P2 | [ ] |
+| T013 | Add trusted origins (localhost:3000, localhost:3001) | P2 | [ ] |
+| T014 | Export Session type for TypeScript usage | P1 | [ ] |
 
-### 2.1 Dependencies & Environment
+**Reference Code (T009-T014):**
+```typescript
+// lib/auth.ts
+import { betterAuth } from "better-auth";
+import { Pool } from "@neondatabase/serverless";
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T013 | Add `python-jose[cryptography]==3.3.0` to requirements.txt | Backend | P1 | [ ] |
-| T014 | Add `passlib[bcrypt]==1.7.4` to requirements.txt | Backend | P1 | [ ] |
-| T015 | Add `bcrypt==4.1.2` to requirements.txt | Backend | P1 | [ ] |
-| T016 | Install new dependencies using pip | Backend | P1 | [ ] |
-| T017 | Add `JWT_SECRET_KEY` environment variable to `.env` file | Backend | P1 | [ ] |
-| T018 | Add `JWT_ALGORITHM=HS256` environment variable to `.env` file | Backend | P2 | [ ] |
-| T019 | Add `JWT_EXPIRE_MINUTES=1440` environment variable to `.env` file | Backend | P2 | [ ] |
-| T020 | Add `BCRYPT_ROUNDS=12` environment variable to `.env` file | Backend | P2 | [ ] |
-| T021 | Update `core/config.py` Settings class to include JWT and bcrypt configuration | Backend | P1 | [ ] |
+export const auth = betterAuth({
+  database: new Pool({
+    connectionString: process.env.DATABASE_URL,
+  }),
+  emailAndPassword: {
+    enabled: true,
+    autoSignIn: true,
+    minPasswordLength: 8,
+  },
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24,     // Refresh daily
+    cookieCache: {
+      enabled: true,
+      maxAge: 60 * 5, // 5 minute cache
+    },
+  },
+  trustedOrigins: ["http://localhost:3000", "http://localhost:3001"],
+});
 
----
+export type Session = typeof auth.$Infer.Session;
+```
 
-## CATEGORY 3: BACKEND MODELS & SCHEMAS
+### 1.4 Auth Client Configuration
 
-### 3.1 User Model
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T015 | Create `lib/auth-client.ts` with Better Auth client config | P1 | [ ] |
+| T016 | Export `signIn`, `signUp`, `signOut`, `useSession` from client | P1 | [ ] |
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T022 | Create `models/user.py` file | Backend | P1 | [ ] |
-| T023 | Define `User` SQLModel class with fields: id (UUID), email, hashed_password, created_at, updated_at | Backend | P1 | [ ] |
-| T024 | Configure User model with `table=True` for database mapping | Backend | P1 | [ ] |
-| T025 | Add User model to `models/__init__.py` exports | Backend | P1 | [ ] |
+**Reference Code (T015-T016):**
+```typescript
+// lib/auth-client.ts
+import { createAuthClient } from "better-auth/react";
 
-### 3.2 Todo Model Update
+export const authClient = createAuthClient({
+  baseURL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL || "http://localhost:3000",
+});
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T026 | Add `user_id` (UUID) field to existing `Todo` model in `models/todo.py` | Backend | P1 | [ ] |
-| T027 | Add relationship definition between Todo and User models | Backend | P2 | [ ] |
+export const { signIn, signUp, signOut, useSession } = authClient;
+```
 
-### 3.3 Pydantic Schemas
+### 1.5 API Handler Mount
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T028 | Create `schemas/auth.py` file for authentication schemas | Backend | P1 | [ ] |
-| T029 | Define `SignupRequest` schema with fields: email (EmailStr), password (str, min 8 chars) | Backend | P1 | [ ] |
-| T030 | Define `LoginRequest` schema with fields: email (EmailStr), password (str) | Backend | P1 | [ ] |
-| T031 | Define `UserResponse` schema with fields: id, email, created_at (excludes password) | Backend | P1 | [ ] |
-| T032 | Define `AuthResponse` schema with fields: message, user (UserResponse) | Backend | P1 | [ ] |
-| T033 | Define `TokenData` schema with fields: user_id (UUID), email (str) | Backend | P2 | [ ] |
-| T034 | Add auth schemas to `schemas/__init__.py` exports | Backend | P1 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T017 | Create directory `app/api/auth/[...all]/` | P1 | [ ] |
+| T018 | Create `app/api/auth/[...all]/route.ts` with Better Auth handler | P1 | [ ] |
 
----
+**Reference Code (T017-T018):**
+```typescript
+// app/api/auth/[...all]/route.ts
+import { auth } from "@/lib/auth";
+import { toNextJsHandler } from "better-auth/next-js";
 
-## CATEGORY 4: BACKEND UTILITIES
+export const { POST, GET } = toNextJsHandler(auth.handler);
+```
 
-### 4.1 Password Utilities
+### 1.6 Database Schema Migration
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T035 | Create `core/security.py` file for security utilities | Backend | P1 | [ ] |
-| T036 | Implement `hash_password(plain_password: str) -> str` function using bcrypt | Backend | P1 | [ ] |
-| T037 | Implement `verify_password(plain_password: str, hashed_password: str) -> bool` function | Backend | P1 | [ ] |
-| T038 | Configure bcrypt with cost factor from environment variable | Backend | P2 | [ ] |
-
-### 4.2 JWT Utilities
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T039 | Implement `create_access_token(data: dict, expires_delta: timedelta) -> str` function | Backend | P1 | [ ] |
-| T040 | Implement `decode_access_token(token: str) -> dict` function | Backend | P1 | [ ] |
-| T041 | Add JWT expiration time calculation using settings | Backend | P1 | [ ] |
-| T042 | Handle JWT decode errors (expired, invalid signature) with proper exceptions | Backend | P1 | [ ] |
-
----
-
-## CATEGORY 5: BACKEND AUTH ROUTES
-
-### 5.1 Router Setup
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T043 | Create `api/auth.py` file for authentication routes | Backend | P1 | [ ] |
-| T044 | Create FastAPI APIRouter with prefix `/auth` and tag `auth` | Backend | P1 | [ ] |
-| T045 | Register auth router in `main.py` application | Backend | P1 | [ ] |
-
-### 5.2 Signup Endpoint
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T046 | Implement `POST /auth/signup` route handler | Backend | P1 | [ ] |
-| T047 | Validate email format using Pydantic EmailStr | Backend | P1 | [ ] |
-| T048 | Validate password length (minimum 8 characters) | Backend | P1 | [ ] |
-| T049 | Check if email already exists in database | Backend | P1 | [ ] |
-| T050 | Return 409 Conflict if email already registered | Backend | P1 | [ ] |
-| T051 | Hash password using bcrypt before storing | Backend | P1 | [ ] |
-| T052 | Create new User record in database | Backend | P1 | [ ] |
-| T053 | Return 201 Created with user info (excluding password) | Backend | P1 | [ ] |
-
-### 5.3 Login Endpoint
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T054 | Implement `POST /auth/login` route handler | Backend | P1 | [ ] |
-| T055 | Query user by email from database | Backend | P1 | [ ] |
-| T056 | Return 401 Unauthorized if user not found | Backend | P1 | [ ] |
-| T057 | Verify password using bcrypt compare | Backend | P1 | [ ] |
-| T058 | Return 401 Unauthorized if password incorrect | Backend | P1 | [ ] |
-| T059 | Generate JWT access token with user_id and email in payload | Backend | P1 | [ ] |
-| T060 | Set HTTP-only cookie with access token in response | Backend | P1 | [ ] |
-| T061 | Return 200 OK with user info and success message | Backend | P1 | [ ] |
-
-### 5.4 Logout Endpoint
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T062 | Implement `POST /auth/logout` route handler | Backend | P1 | [ ] |
-| T063 | Clear access_token cookie by setting Max-Age=0 | Backend | P1 | [ ] |
-| T064 | Return 200 OK with logout success message | Backend | P1 | [ ] |
-
-### 5.5 Current User Endpoint
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T065 | Implement `GET /auth/me` route handler | Backend | P1 | [ ] |
-| T066 | Use get_current_user dependency to extract user | Backend | P1 | [ ] |
-| T067 | Return 200 OK with current user info | Backend | P1 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T019 | Run `npx @better-auth/cli@latest generate` to generate schema | P1 | [ ] |
+| T020 | Run `npx @better-auth/cli@latest migrate` to apply schema to Neon | P1 | [ ] |
+| T021 | Verify tables created: `user`, `session`, `account`, `verification` | P1 | [ ] |
 
 ---
 
-## CATEGORY 6: BACKEND AUTH DEPENDENCY
+## PHASE 2: AUTH UI PAGES (Frontend)
 
-### 6.1 Authentication Dependency
+### 2.1 Auth Layout
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T068 | Create `core/deps.py` file for FastAPI dependencies | Backend | P1 | [ ] |
-| T069 | Implement `get_token_from_cookie(request: Request) -> str` function | Backend | P1 | [ ] |
-| T070 | Implement `get_token_from_header(authorization: str) -> str` function | Backend | P1 | [ ] |
-| T071 | Implement `get_current_user(token: str, session: Session) -> User` dependency | Backend | P1 | [ ] |
-| T072 | Extract user_id from JWT payload in dependency | Backend | P1 | [ ] |
-| T073 | Query user from database by user_id | Backend | P1 | [ ] |
-| T074 | Raise HTTPException 401 if token invalid or expired | Backend | P1 | [ ] |
-| T075 | Raise HTTPException 401 if user not found in database | Backend | P1 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T022 | Create `app/(auth)/layout.tsx` for auth pages (centered, minimal) | P1 | [ ] |
 
----
+**Reference Code (T022):**
+```typescript
+// app/(auth)/layout.tsx
+export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="max-w-md w-full p-6">
+        {children}
+      </div>
+    </div>
+  );
+}
+```
 
-## CATEGORY 7: BACKEND TODO ROUTE PROTECTION
+### 2.2 Signup Page
 
-### 7.1 Apply Authentication to Todo Routes
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T023 | Create `app/(auth)/signup/page.tsx` | P1 | [ ] |
+| T024 | Build signup form with name, email, password fields | P1 | [ ] |
+| T025 | Add client-side validation (email format, password min 8 chars) | P1 | [ ] |
+| T026 | Call `authClient.signUp.email()` on form submit | P1 | [ ] |
+| T027 | Handle success: redirect to `/dashboard` (auto sign-in enabled) | P1 | [ ] |
+| T028 | Handle errors: display error messages (email taken, etc.) | P1 | [ ] |
+| T029 | Add "Already have an account? Login" link | P2 | [ ] |
+| T030 | Add loading state to submit button | P2 | [ ] |
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T076 | Add `get_current_user` dependency to `GET /api/todos` route | Backend | P1 | [ ] |
-| T077 | Add `get_current_user` dependency to `GET /api/todos/stats` route | Backend | P1 | [ ] |
-| T078 | Add `get_current_user` dependency to `GET /api/todos/{id}` route | Backend | P1 | [ ] |
-| T079 | Add `get_current_user` dependency to `POST /api/todos` route | Backend | P1 | [ ] |
-| T080 | Add `get_current_user` dependency to `PUT /api/todos/{id}` route | Backend | P1 | [ ] |
-| T081 | Add `get_current_user` dependency to `PATCH /api/todos/{id}/status` route | Backend | P1 | [ ] |
-| T082 | Add `get_current_user` dependency to `DELETE /api/todos/{id}` route | Backend | P1 | [ ] |
+**Reference Code (T023-T030):**
+```typescript
+// app/(auth)/signup/page.tsx
+"use client";
+import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-### 7.2 Update Todo Queries for User Filtering
+export default function SignupPage() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T083 | Modify `GET /api/todos` query to filter by `user_id = current_user.id` | Backend | P1 | [ ] |
-| T084 | Modify `GET /api/todos/stats` query to calculate stats for current user only | Backend | P1 | [ ] |
-| T085 | Modify `GET /api/todos/{id}` query to include `user_id = current_user.id` condition | Backend | P1 | [ ] |
-| T086 | Modify `POST /api/todos` to automatically set `user_id = current_user.id` on new todo | Backend | P1 | [ ] |
-| T087 | Modify `PUT /api/todos/{id}` to verify ownership before update | Backend | P1 | [ ] |
-| T088 | Modify `PATCH /api/todos/{id}/status` to verify ownership before status change | Backend | P1 | [ ] |
-| T089 | Modify `DELETE /api/todos/{id}` to verify ownership before deletion | Backend | P1 | [ ] |
-| T090 | Return 404 Not Found (not 403) when user tries to access another user's todo | Backend | P1 | [ ] |
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
----
+    const { data, error: signUpError } = await authClient.signUp.email({
+      name,
+      email,
+      password,
+      callbackURL: "/dashboard",
+    });
 
-## CATEGORY 8: FRONTEND AUTH CONTEXT
+    setLoading(false);
 
-### 8.1 Auth State Management
+    if (signUpError) {
+      setError(signUpError.message || "Signup failed");
+      return;
+    }
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T091 | Create `contexts/AuthContext.tsx` file | Frontend | P1 | [ ] |
-| T092 | Define AuthContext with user state, isAuthenticated, isLoading, error | Frontend | P1 | [ ] |
-| T093 | Implement AuthProvider component that wraps children | Frontend | P1 | [ ] |
-| T094 | Implement `login(email, password)` method in AuthContext | Frontend | P1 | [ ] |
-| T095 | Implement `signup(email, password)` method in AuthContext | Frontend | P1 | [ ] |
-| T096 | Implement `logout()` method in AuthContext | Frontend | P1 | [ ] |
-| T097 | Implement `checkAuth()` method to verify session on mount | Frontend | P1 | [ ] |
-| T098 | Create `useAuth()` custom hook for consuming AuthContext | Frontend | P1 | [ ] |
-| T099 | Add AuthProvider to root layout.tsx wrapping the application | Frontend | P1 | [ ] |
+    router.push("/dashboard");
+  };
 
----
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-center">Create Account</h1>
+      {error && <p className="text-red-500 text-center">{error}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          type="text"
+          placeholder="Name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="w-full p-3 border rounded"
+        />
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="w-full p-3 border rounded"
+        />
+        <input
+          type="password"
+          placeholder="Password (min 8 characters)"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={8}
+          required
+          className="w-full p-3 border rounded"
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full p-3 bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          {loading ? "Creating account..." : "Sign Up"}
+        </button>
+      </form>
+      <p className="text-center">
+        Already have an account? <Link href="/login" className="text-blue-600">Login</Link>
+      </p>
+    </div>
+  );
+}
+```
 
-## CATEGORY 9: FRONTEND AUTH PAGES
+### 2.3 Login Page
 
-### 9.1 Signup Page
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T031 | Create `app/(auth)/login/page.tsx` | P1 | [ ] |
+| T032 | Build login form with email, password fields | P1 | [ ] |
+| T033 | Call `authClient.signIn.email()` on form submit | P1 | [ ] |
+| T034 | Handle success: redirect to `/dashboard` | P1 | [ ] |
+| T035 | Handle errors: display error messages (invalid credentials) | P1 | [ ] |
+| T036 | Add "Don't have an account? Sign up" link | P2 | [ ] |
+| T037 | Add loading state to submit button | P2 | [ ] |
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T100 | Create `app/(auth)/layout.tsx` for auth pages layout (centered, no navigation) | Frontend | P1 | [ ] |
-| T101 | Create `app/(auth)/signup/page.tsx` file | Frontend | P1 | [ ] |
-| T102 | Build signup form UI with email and password fields | Frontend | P1 | [ ] |
-| T103 | Add password confirmation field to signup form | Frontend | P2 | [ ] |
-| T104 | Implement client-side email format validation | Frontend | P1 | [ ] |
-| T105 | Implement client-side password length validation (min 8 chars) | Frontend | P1 | [ ] |
-| T106 | Implement password match validation (password === confirm) | Frontend | P2 | [ ] |
-| T107 | Display validation error messages below form fields | Frontend | P1 | [ ] |
-| T108 | Call signup API on form submit | Frontend | P1 | [ ] |
-| T109 | Display API error messages (email taken, etc.) | Frontend | P1 | [ ] |
-| T110 | Redirect to login page on successful signup | Frontend | P1 | [ ] |
-| T111 | Add "Already have an account? Login" link to signup page | Frontend | P2 | [ ] |
-| T112 | Add loading state to submit button during API call | Frontend | P2 | [ ] |
+**Reference Code (T031-T037):**
+```typescript
+// app/(auth)/login/page.tsx
+"use client";
+import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 
-### 9.2 Login Page
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T113 | Create `app/(auth)/login/page.tsx` file | Frontend | P1 | [ ] |
-| T114 | Build login form UI with email and password fields | Frontend | P1 | [ ] |
-| T115 | Implement client-side email format validation | Frontend | P1 | [ ] |
-| T116 | Call login API on form submit | Frontend | P1 | [ ] |
-| T117 | Display API error messages (invalid credentials) | Frontend | P1 | [ ] |
-| T118 | Redirect to dashboard/tasks on successful login | Frontend | P1 | [ ] |
-| T119 | Add "Don't have an account? Sign up" link to login page | Frontend | P2 | [ ] |
-| T120 | Add loading state to submit button during API call | Frontend | P2 | [ ] |
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
----
+    const { data, error: signInError } = await authClient.signIn.email({
+      email,
+      password,
+      callbackURL: "/dashboard",
+    });
 
-## CATEGORY 10: FRONTEND PROTECTED ROUTES
+    setLoading(false);
 
-### 10.1 Route Protection
+    if (signInError) {
+      setError(signInError.message || "Invalid credentials");
+      return;
+    }
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T121 | Create `app/(protected)/layout.tsx` for protected pages | Frontend | P1 | [ ] |
-| T122 | Implement auth check in protected layout using useAuth() | Frontend | P1 | [ ] |
-| T123 | Redirect to /login if user is not authenticated | Frontend | P1 | [ ] |
-| T124 | Show loading spinner while checking authentication status | Frontend | P2 | [ ] |
-| T125 | Move main page.tsx content to `app/(protected)/page.tsx` | Frontend | P1 | [ ] |
-| T126 | Ensure all todo-related pages are under (protected) route group | Frontend | P1 | [ ] |
+    router.push("/dashboard");
+  };
 
-### 10.2 Navigation Updates
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T127 | Update StickyHeader to show user email when logged in | Frontend | P2 | [ ] |
-| T128 | Add logout button to navigation header | Frontend | P1 | [ ] |
-| T129 | Implement logout click handler to call logout API and redirect | Frontend | P1 | [ ] |
-| T130 | Hide login/signup links when user is authenticated | Frontend | P2 | [ ] |
-
----
-
-## CATEGORY 11: FRONTEND API INTEGRATION
-
-### 11.1 Auth API Routes (Proxy)
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T131 | Create `app/api/auth/signup/route.ts` proxy to backend /auth/signup | Frontend | P1 | [ ] |
-| T132 | Create `app/api/auth/login/route.ts` proxy to backend /auth/login | Frontend | P1 | [ ] |
-| T133 | Create `app/api/auth/logout/route.ts` proxy to backend /auth/logout | Frontend | P1 | [ ] |
-| T134 | Create `app/api/auth/me/route.ts` proxy to backend /auth/me | Frontend | P1 | [ ] |
-| T135 | Handle cookie forwarding in auth proxy routes | Frontend | P1 | [ ] |
-
-### 11.2 API Client Updates
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T136 | Create `lib/auth-api.ts` file for authentication API calls | Frontend | P1 | [ ] |
-| T137 | Implement `authApi.signup(email, password)` function | Frontend | P1 | [ ] |
-| T138 | Implement `authApi.login(email, password)` function | Frontend | P1 | [ ] |
-| T139 | Implement `authApi.logout()` function | Frontend | P1 | [ ] |
-| T140 | Implement `authApi.getCurrentUser()` function | Frontend | P1 | [ ] |
-| T141 | Update existing todo API routes to forward cookies to backend | Frontend | P1 | [ ] |
-
-### 11.3 Error Handling
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T142 | Handle 401 responses globally in API client | Frontend | P1 | [ ] |
-| T143 | Clear auth state on 401 response | Frontend | P1 | [ ] |
-| T144 | Redirect to login page on 401 response | Frontend | P1 | [ ] |
-| T145 | Display user-friendly error messages for auth failures | Frontend | P1 | [ ] |
-
----
-
-## CATEGORY 12: USER DATA ISOLATION (CRITICAL)
-
-### 12.1 Backend Isolation Enforcement
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T146 | Verify GET /api/todos returns ONLY current user's todos | Backend | P1 | [ ] |
-| T147 | Verify GET /api/todos/stats calculates ONLY current user's stats | Backend | P1 | [ ] |
-| T148 | Verify GET /api/todos/{id} returns 404 for other user's todo | Backend | P1 | [ ] |
-| T149 | Verify POST /api/todos ignores any user_id in request body | Backend | P1 | [ ] |
-| T150 | Verify PUT /api/todos/{id} returns 404 for other user's todo | Backend | P1 | [ ] |
-| T151 | Verify PATCH /api/todos/{id}/status returns 404 for other user's todo | Backend | P1 | [ ] |
-| T152 | Verify DELETE /api/todos/{id} returns 404 for other user's todo | Backend | P1 | [ ] |
-
-### 12.2 Isolation Tests
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T153 | Write test: User A creates todo, User B cannot see it | Backend | P1 | [ ] |
-| T154 | Write test: User A creates todo, User B cannot update it | Backend | P1 | [ ] |
-| T155 | Write test: User A creates todo, User B cannot delete it | Backend | P1 | [ ] |
-| T156 | Write test: User cannot access todo by guessing ID | Backend | P1 | [ ] |
-
----
-
-## CATEGORY 13: TESTING & VALIDATION
-
-### 13.1 Backend Auth Tests
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T157 | Write test: Signup with valid email and password succeeds | Backend | P1 | [ ] |
-| T158 | Write test: Signup with invalid email format fails with 400 | Backend | P1 | [ ] |
-| T159 | Write test: Signup with short password fails with 400 | Backend | P1 | [ ] |
-| T160 | Write test: Signup with duplicate email fails with 409 | Backend | P1 | [ ] |
-| T161 | Write test: Login with valid credentials succeeds | Backend | P1 | [ ] |
-| T162 | Write test: Login with wrong password fails with 401 | Backend | P1 | [ ] |
-| T163 | Write test: Login with non-existent email fails with 401 | Backend | P1 | [ ] |
-| T164 | Write test: Logout clears authentication cookie | Backend | P1 | [ ] |
-| T165 | Write test: GET /auth/me returns current user when authenticated | Backend | P1 | [ ] |
-| T166 | Write test: GET /auth/me returns 401 when not authenticated | Backend | P1 | [ ] |
-
-### 13.2 Backend Protected Routes Tests
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T167 | Write test: GET /api/todos without token returns 401 | Backend | P1 | [ ] |
-| T168 | Write test: POST /api/todos without token returns 401 | Backend | P1 | [ ] |
-| T169 | Write test: GET /api/todos with valid token returns user's todos | Backend | P1 | [ ] |
-| T170 | Write test: GET /api/todos with expired token returns 401 | Backend | P1 | [ ] |
-| T171 | Write test: GET /api/todos with invalid token returns 401 | Backend | P1 | [ ] |
-
-### 13.3 Frontend Tests
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T172 | Test: Signup form validates email format | Frontend | P2 | [ ] |
-| T173 | Test: Signup form validates password length | Frontend | P2 | [ ] |
-| T174 | Test: Login form submits and redirects on success | Frontend | P2 | [ ] |
-| T175 | Test: Protected route redirects to login when not authenticated | Frontend | P2 | [ ] |
-| T176 | Test: Logout clears state and redirects to login | Frontend | P2 | [ ] |
-
-### 13.4 End-to-End Tests
-
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T177 | E2E: Complete signup flow (form → API → redirect to login) | E2E | P2 | [ ] |
-| T178 | E2E: Complete login flow (form → API → redirect to dashboard) | E2E | P2 | [ ] |
-| T179 | E2E: Create todo as logged in user | E2E | P2 | [ ] |
-| T180 | E2E: Verify user can only see their own todos | E2E | P2 | [ ] |
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-center">Welcome Back</h1>
+      {error && <p className="text-red-500 text-center">{error}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="w-full p-3 border rounded"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          className="w-full p-3 border rounded"
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full p-3 bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          {loading ? "Signing in..." : "Sign In"}
+        </button>
+      </form>
+      <p className="text-center">
+        Don't have an account? <Link href="/signup" className="text-blue-600">Sign up</Link>
+      </p>
+    </div>
+  );
+}
+```
 
 ---
 
-## CATEGORY 14: DOCUMENTATION & CLEANUP
+## PHASE 3: ROUTE PROTECTION (Frontend)
 
-### 14.1 Documentation
+### 3.1 Middleware Protection
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T181 | Update API documentation with auth endpoints | Backend | P3 | [ ] |
-| T182 | Document JWT token structure and claims | Backend | P3 | [ ] |
-| T183 | Update README with authentication setup instructions | Docs | P3 | [ ] |
-| T184 | Document environment variables required for auth | Docs | P3 | [ ] |
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T038 | Create `middleware.ts` in frontend root | P1 | [ ] |
+| T039 | Protect `/dashboard` routes (redirect unauthenticated to `/login`) | P1 | [ ] |
+| T040 | Redirect authenticated users away from `/login` and `/signup` | P1 | [ ] |
 
-### 14.2 Cleanup
+**Reference Code (T038-T040):**
+```typescript
+// middleware.ts
+import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-| ID | Task | Component | Priority | Status |
-|----|------|-----------|----------|--------|
-| T185 | Remove any hardcoded test users or credentials | Backend | P2 | [ ] |
-| T186 | Ensure JWT_SECRET_KEY is not committed to version control | Backend | P1 | [ ] |
-| T187 | Add .env.example with placeholder for JWT_SECRET_KEY | Backend | P2 | [ ] |
-| T188 | Review and remove any console.log statements with sensitive data | Frontend | P2 | [ ] |
+export async function middleware(request: NextRequest) {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+
+  const { pathname } = request.nextUrl;
+  const isAuthPage = pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isProtectedRoute = pathname.startsWith("/dashboard");
+
+  // Redirect authenticated users away from auth pages
+  if (session && isAuthPage) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // Redirect unauthenticated users to login
+  if (!session && isProtectedRoute) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/dashboard/:path*", "/login", "/signup"],
+};
+```
+
+### 3.2 Protected Layout
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T041 | Create `app/(protected)/layout.tsx` for protected pages | P1 | [ ] |
+| T042 | Move existing dashboard/todo UI into `app/(protected)/dashboard/page.tsx` | P1 | [ ] |
+
+### 3.3 Navigation Updates
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T043 | Update header component to show user email when logged in | P2 | [ ] |
+| T044 | Add logout button to header | P1 | [ ] |
+| T045 | Implement logout: call `authClient.signOut()` and redirect to `/login` | P1 | [ ] |
+
+**Reference Code (T044-T045):**
+```typescript
+// In header component
+import { authClient } from "@/lib/auth-client";
+import { useRouter } from "next/navigation";
+
+const { data: session } = authClient.useSession();
+const router = useRouter();
+
+const handleLogout = async () => {
+  await authClient.signOut({
+    fetchOptions: {
+      onSuccess: () => {
+        router.push("/login");
+      },
+    },
+  });
+};
+```
+
+---
+
+## PHASE 4: TODO API PROXY (Frontend)
+
+### 4.1 Authenticated Todo Proxy Routes
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T046 | Update `app/api/todos/route.ts` to validate session via Better Auth | P1 | [ ] |
+| T047 | Extract `user.id` from session and pass as `X-User-ID` header to FastAPI | P1 | [ ] |
+| T048 | Return 401 if no valid session | P1 | [ ] |
+| T049 | Update `app/api/todos/[id]/route.ts` with same auth pattern | P1 | [ ] |
+| T050 | Update `app/api/todos/stats/route.ts` with same auth pattern | P1 | [ ] |
+| T051 | Update `app/api/todos/[id]/status/route.ts` with same auth pattern | P1 | [ ] |
+
+**Reference Code (T046-T048):**
+```typescript
+// app/api/todos/route.ts
+import { auth } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+
+const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8889";
+
+async function getSession(request: NextRequest) {
+  return auth.api.getSession({ headers: request.headers });
+}
+
+export async function GET(request: NextRequest) {
+  const session = await getSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const queryString = searchParams.toString();
+  const url = `${BACKEND_URL}/api/todos/${queryString ? `?${queryString}` : ""}`;
+
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-ID": session.user.id,
+    },
+  });
+
+  const data = await response.json();
+  return NextResponse.json(data, { status: response.status });
+}
+
+export async function POST(request: NextRequest) {
+  const session = await getSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const response = await fetch(`${BACKEND_URL}/api/todos/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-ID": session.user.id,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json();
+  return NextResponse.json(data, { status: response.status });
+}
+```
+
+---
+
+## PHASE 5: BACKEND USER ISOLATION (FastAPI)
+
+### 5.1 User ID Dependency
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T052 | Create/update `core/deps.py` with `get_current_user_from_header` dependency | P1 | [ ] |
+| T053 | Read `X-User-ID` header from trusted Next.js proxy | P1 | [ ] |
+| T054 | Raise 401 if `X-User-ID` header is missing | P1 | [ ] |
+
+**Reference Code (T052-T054):**
+```python
+# core/deps.py
+from fastapi import Header, HTTPException
+from typing import Optional
+
+async def get_current_user_from_header(
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+) -> str:
+    """Get user ID from trusted Next.js proxy header."""
+    if not x_user_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return x_user_id
+```
+
+### 5.2 Update Todo Routes for User Filtering
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T055 | Add `get_current_user_from_header` dependency to `GET /api/todos` | P1 | [ ] |
+| T056 | Filter todos query by `user_id = current_user` | P1 | [ ] |
+| T057 | Add dependency to `GET /api/todos/stats` and filter by user | P1 | [ ] |
+| T058 | Add dependency to `GET /api/todos/{id}` and verify ownership | P1 | [ ] |
+| T059 | Add dependency to `POST /api/todos` and set `user_id = current_user` | P1 | [ ] |
+| T060 | Add dependency to `PUT /api/todos/{id}` and verify ownership | P1 | [ ] |
+| T061 | Add dependency to `PATCH /api/todos/{id}/status` and verify ownership | P1 | [ ] |
+| T062 | Add dependency to `DELETE /api/todos/{id}` and verify ownership | P1 | [ ] |
+| T063 | Return 404 (not 403) when accessing another user's todo | P1 | [ ] |
+
+### 5.3 Update Todo Model for Better Auth User ID
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T064 | Change `todos.user_id` type from UUID to TEXT (Better Auth uses TEXT IDs) | P1 | [ ] |
+| T065 | Create Alembic migration for user_id type change | P1 | [ ] |
+| T066 | Run migration to update todos table | P1 | [ ] |
+
+**Note:** Better Auth creates a `user` table with TEXT `id` field, not UUID. Our `todos.user_id` should reference this.
+
+---
+
+## PHASE 6: TASK MANAGEMENT UI (Frontend)
+
+### 6.1 Dashboard Page
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T067 | Ensure dashboard page displays todos from API (already exists, verify auth) | P1 | [ ] |
+| T068 | Verify todo list only shows current user's todos | P1 | [ ] |
+
+### 6.2 Task CRUD Operations
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T069 | **Add Task**: Verify add form calls POST /api/todos | P1 | [ ] |
+| T070 | **View Tasks**: Verify list displays with title, category, due date, status | P1 | [ ] |
+| T071 | **Update Task**: Verify edit form calls PUT /api/todos/{id} | P1 | [ ] |
+| T072 | **Delete Task**: Verify delete button calls DELETE /api/todos/{id} | P1 | [ ] |
+| T073 | **Mark Complete**: Verify status toggle calls PATCH /api/todos/{id}/status | P1 | [ ] |
+
+### 6.3 Error Handling
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T074 | Handle 401 responses globally: clear session and redirect to login | P1 | [ ] |
+| T075 | Display user-friendly error messages for API failures | P1 | [ ] |
+
+---
+
+## PHASE 7: TESTING & VERIFICATION
+
+### 7.1 Authentication Flow Tests
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T076 | Test: New user can sign up with email/password | P1 | [ ] |
+| T077 | Test: Duplicate email shows error | P1 | [ ] |
+| T078 | Test: User can sign in with valid credentials | P1 | [ ] |
+| T079 | Test: Invalid credentials show error | P1 | [ ] |
+| T080 | Test: Session persists on page refresh | P1 | [ ] |
+| T081 | Test: Logout clears session and redirects | P1 | [ ] |
+
+### 7.2 Route Protection Tests
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T082 | Test: Unauthenticated users redirected from /dashboard to /login | P1 | [ ] |
+| T083 | Test: Authenticated users redirected from /login to /dashboard | P1 | [ ] |
+
+### 7.3 User Isolation Tests
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T084 | Test: User A creates todo, User B cannot see it | P1 | [ ] |
+| T085 | Test: User A creates todo, User B cannot update it (404) | P1 | [ ] |
+| T086 | Test: User A creates todo, User B cannot delete it (404) | P1 | [ ] |
+| T087 | Test: Todo created without session returns 401 | P1 | [ ] |
+
+### 7.4 End-to-End Flow
+
+| ID | Task | Priority | Status |
+|----|------|----------|--------|
+| T088 | E2E: Sign up → Auto login → Create todo → Mark complete → Delete → Logout | P2 | [ ] |
 
 ---
 
 ## EXECUTION ORDER
 
-### Phase 1: Database Foundation (T001-T012)
+### Stage 1: Better Auth Foundation (T001-T021)
 ```
-T001 → T002 → T003 → T004 → T005 (Users table)
-T006 → T007 → T008 → T009 → T010 → T011 → T012 (Todos modification)
-```
-
-### Phase 2: Backend Dependencies & Config (T013-T021)
-```
-T013 → T014 → T015 → T016 (Install deps)
-T017 → T018 → T019 → T020 → T021 (Environment config)
+T001 → T002 (Install deps)
+T003 → T004 → T005 → T006 → T007 → T008 (Env vars)
+T009 → T010 → T011 → T012 → T013 → T014 (Auth server)
+T015 → T016 (Auth client)
+T017 → T018 (API handler)
+T019 → T020 → T021 (Database migration)
 ```
 
-### Phase 3: Backend Models & Schemas (T022-T034)
+### Stage 2: Auth UI (T022-T037)
 ```
-T022 → T023 → T024 → T025 (User model)
-T026 → T027 (Todo model update)
-T028 → T029 → T030 → T031 → T032 → T033 → T034 (Schemas)
-```
-
-### Phase 4: Backend Utilities (T035-T042)
-```
-T035 → T036 → T037 → T038 (Password utils)
-T039 → T040 → T041 → T042 (JWT utils)
+T022 (Auth layout)
+T023 → T024 → T025 → T026 → T027 → T028 → T029 → T030 (Signup)
+T031 → T032 → T033 → T034 → T035 → T036 → T037 (Login)
 ```
 
-### Phase 5: Backend Auth Routes (T043-T067)
+### Stage 3: Route Protection (T038-T045)
 ```
-T043 → T044 → T045 (Router setup)
-T046 → T047 → T048 → T049 → T050 → T051 → T052 → T053 (Signup)
-T054 → T055 → T056 → T057 → T058 → T059 → T060 → T061 (Login)
-T062 → T063 → T064 (Logout)
-T065 → T066 → T067 (Current user)
+T038 → T039 → T040 (Middleware)
+T041 → T042 (Protected layout)
+T043 → T044 → T045 (Navigation)
 ```
 
-### Phase 6: Backend Auth Dependency (T068-T075)
+### Stage 4: API Proxy Auth (T046-T051)
 ```
-T068 → T069 → T070 → T071 → T072 → T073 → T074 → T075
-```
-
-### Phase 7: Backend Route Protection (T076-T090)
-```
-T076 → T077 → T078 → T079 → T080 → T081 → T082 (Add dependency)
-T083 → T084 → T085 → T086 → T087 → T088 → T089 → T090 (Query updates)
+T046 → T047 → T048 (Main todos route)
+T049 → T050 → T051 (Other todo routes)
 ```
 
-### Phase 8: Frontend Auth Context (T091-T099)
+### Stage 5: Backend User Isolation (T052-T066)
 ```
-T091 → T092 → T093 → T094 → T095 → T096 → T097 → T098 → T099
-```
-
-### Phase 9: Frontend Auth Pages (T100-T120)
-```
-T100 → T101 → T102 → T103 → T104 → T105 → T106 → T107 → T108 → T109 → T110 → T111 → T112 (Signup)
-T113 → T114 → T115 → T116 → T117 → T118 → T119 → T120 (Login)
+T052 → T053 → T054 (Dependency)
+T055 → T056 → T057 → T058 → T059 → T060 → T061 → T062 → T063 (Route updates)
+T064 → T065 → T066 (Model migration)
 ```
 
-### Phase 10: Frontend Route Protection (T121-T130)
+### Stage 6: Task Management Verification (T067-T075)
 ```
-T121 → T122 → T123 → T124 → T125 → T126 (Protected routes)
-T127 → T128 → T129 → T130 (Navigation)
-```
-
-### Phase 11: Frontend API Integration (T131-T145)
-```
-T131 → T132 → T133 → T134 → T135 (Proxy routes)
-T136 → T137 → T138 → T139 → T140 → T141 (API client)
-T142 → T143 → T144 → T145 (Error handling)
+T067 → T068 (Dashboard)
+T069 → T070 → T071 → T072 → T073 (CRUD)
+T074 → T075 (Error handling)
 ```
 
-### Phase 12: User Isolation Verification (T146-T156)
+### Stage 7: Testing (T076-T088)
 ```
-T146 → T147 → T148 → T149 → T150 → T151 → T152 (Verification)
-T153 → T154 → T155 → T156 (Isolation tests)
-```
-
-### Phase 13: Testing (T157-T180)
-```
-T157 → T158 → T159 → T160 → T161 → T162 → T163 → T164 → T165 → T166 (Auth tests)
-T167 → T168 → T169 → T170 → T171 (Protected route tests)
-T172 → T173 → T174 → T175 → T176 (Frontend tests)
-T177 → T178 → T179 → T180 (E2E tests)
-```
-
-### Phase 14: Documentation & Cleanup (T181-T188)
-```
-T181 → T182 → T183 → T184 (Documentation)
-T185 → T186 → T187 → T188 (Cleanup)
+T076 → T077 → T078 → T079 → T080 → T081 (Auth tests)
+T082 → T083 (Route protection tests)
+T084 → T085 → T086 → T087 (Isolation tests)
+T088 (E2E)
 ```
 
 ---
 
 ## SUMMARY
 
-| Category | Tasks | Priority P1 | Priority P2 | Priority P3 |
-|----------|-------|-------------|-------------|-------------|
-| Database | 12 | 10 | 2 | 0 |
-| Backend Config | 9 | 3 | 6 | 0 |
-| Backend Models | 13 | 12 | 1 | 0 |
-| Backend Utilities | 8 | 7 | 1 | 0 |
-| Backend Auth Routes | 25 | 25 | 0 | 0 |
-| Backend Dependency | 8 | 8 | 0 | 0 |
-| Backend Protection | 15 | 15 | 0 | 0 |
-| Frontend Context | 9 | 9 | 0 | 0 |
-| Frontend Pages | 21 | 15 | 6 | 0 |
-| Frontend Protection | 10 | 6 | 4 | 0 |
-| Frontend API | 15 | 15 | 0 | 0 |
-| User Isolation | 11 | 11 | 0 | 0 |
-| Testing | 24 | 15 | 9 | 0 |
-| Documentation | 8 | 1 | 3 | 4 |
-| **TOTAL** | **188** | **152** | **32** | **4** |
+| Phase | Tasks | P1 | P2 |
+|-------|-------|----|----|
+| 1. Better Auth Setup | 21 | 18 | 3 |
+| 2. Auth UI Pages | 16 | 12 | 4 |
+| 3. Route Protection | 8 | 6 | 2 |
+| 4. API Proxy Auth | 6 | 6 | 0 |
+| 5. Backend User Isolation | 15 | 15 | 0 |
+| 6. Task Management UI | 9 | 9 | 0 |
+| 7. Testing | 13 | 12 | 1 |
+| **TOTAL** | **88** | **78** | **10** |
+
+---
+
+## Key Differences from Previous Plan
+
+| Aspect | Previous (188 tasks) | New (88 tasks) |
+|--------|---------------------|----------------|
+| Auth Location | FastAPI | Next.js (Better Auth) |
+| Auth Method | Custom JWT | Better Auth library |
+| User Table | SQLModel User | Better Auth `user` table |
+| Session Storage | Stateless JWT | Database-backed sessions |
+| Backend Auth | JWT validation | Trust X-User-ID header |
+| Complexity | High | Low (library handles it) |
+
+---
+
+## Quick Start Commands
+
+```bash
+# 1. Install dependencies
+cd phase-II/frontend
+npm install better-auth @neondatabase/serverless
+
+# 2. Generate secret
+npx @better-auth/cli@latest secret
+
+# 3. After creating auth.ts, generate and apply schema
+npx @better-auth/cli@latest generate
+npx @better-auth/cli@latest migrate
+
+# 4. Start development
+npm run dev
+```
+
+---
+
+## Files to Create/Modify
+
+### New Files (Frontend)
+- `lib/auth.ts` - Better Auth server config
+- `lib/auth-client.ts` - Better Auth client
+- `app/api/auth/[...all]/route.ts` - Auth API handler
+- `app/(auth)/layout.tsx` - Auth pages layout
+- `app/(auth)/login/page.tsx` - Login page
+- `app/(auth)/signup/page.tsx` - Signup page
+- `app/(protected)/layout.tsx` - Protected pages layout
+- `app/(protected)/dashboard/page.tsx` - Dashboard (move existing)
+- `middleware.ts` - Route protection
+
+### Modified Files (Frontend)
+- `.env.local` - Add auth environment variables
+- `app/api/todos/route.ts` - Add auth validation
+- `app/api/todos/[id]/route.ts` - Add auth validation
+- `app/api/todos/stats/route.ts` - Add auth validation
+- Header component - Add logout button
+
+### Modified Files (Backend)
+- `core/deps.py` - Add user header dependency
+- `api/todos.py` - Add user filtering
+- `models/todo.py` - Change user_id to TEXT type
+- Alembic migration - Update user_id column
 
 ---
 
 ## NEXT STEPS
 
-1. Review and approve task list
-2. Begin with Phase 1 (Database tasks)
+1. ✅ Review and approve this task list
+2. Begin with Stage 1 (Better Auth Setup)
 3. Track progress by updating Status column
-4. Create PHR after each completed phase
+4. Create PHR after each completed stage
